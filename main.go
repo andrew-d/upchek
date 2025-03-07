@@ -104,7 +104,12 @@ type service struct {
 	dir    string
 
 	mu      sync.RWMutex
-	results []*runner.Result
+	results []serviceResult
+}
+
+type serviceResult struct {
+	*runner.Result
+	LastRun time.Time
 }
 
 func (s *service) Serve(ctx context.Context) error {
@@ -164,7 +169,10 @@ func (s *service) runScripts(ctx context.Context) error {
 		}
 
 		// Save the result.
-		s.results = append(s.results, result)
+		s.results = append(s.results, serviceResult{
+			Result:  result,
+			LastRun: t0,
+		})
 	}
 	return nil
 }
@@ -203,21 +211,24 @@ th, td {
 </head>
 
 <body>
-<h1>upchek</h1>
+<h1>upchek {{if .Success}}<span style="color: green">&#x2713;</span>{{else}}<span style="color: red">&#x2717;</span>{{end}}
+</h1>
 
 <table>
   <thead>
     <tr>
       <th>Script</th>
+      <th>Last Run</th>
       <th>Exit Code</th>
       <th>Output</th>
       <th>Error</th>
     </tr>
   </thead>
   <tbody>
-  {{range .}}
+  {{range .Results}}
   <tr>
     <td>{{.Name}}</td>
+    <td>{{.LastRun.Format "2006-01-02 15:04:05"}}</td>
     <td {{if .IsSuccess}}style="background-color: green"{{else}}style="background-color: red"{{end}}>
       {{.ExitCode}}
     </td>
@@ -234,8 +245,20 @@ func (s *service) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Get global status
+	ok := true
+	for _, result := range s.results {
+		if !result.IsSuccess() {
+			ok = false
+			break
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html")
-	indexTemplate.Execute(w, s.results)
+	indexTemplate.Execute(w, map[string]any{
+		"Success": ok,
+		"Results": s.results,
+	})
 }
 
 func (s *service) handleHealthz(w http.ResponseWriter, r *http.Request) {
