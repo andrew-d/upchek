@@ -15,6 +15,11 @@ func Error(err error) slog.Attr {
 	return slog.String("error", err.Error())
 }
 
+// Component returns a [slog.Attr] representing the given program component.
+func Component(c string) slog.Attr {
+	return slog.String("component", c)
+}
+
 // Package returns a [slog.Attr] representing the given package name.
 func Package(pkg string) slog.Attr {
 	return slog.String("package", pkg)

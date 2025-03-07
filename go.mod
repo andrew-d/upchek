@@ -7,3 +7,5 @@ require (
 	github.com/thejerf/suture/v4 v4.0.6
 	github.com/thejerf/sutureslog v1.0.1
 )
+
+require github.com/google/go-cmp v0.7.0 // indirect

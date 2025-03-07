@@ -1,7 +1,9 @@
 // Package suturesext provides a set of extensions to the suture package.
 package sutureext
 
-import "context"
+import (
+	"context"
+)
 
 // The ServiceFunc type is an adapter to allow the use of ordinary functions as
 // a suture.Service. If f is a function with the appropriate signature,
