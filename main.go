@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 	"github.com/spf13/pflag"
 	"github.com/thejerf/suture/v4"
 	"github.com/thejerf/sutureslog"
@@ -86,6 +88,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", service.handleIndex)
+	mux.HandleFunc("GET /api/v1/results", service.handleResults)
 	mux.HandleFunc("GET /healthz", service.handleHealthz)
 	mux.Handle("/debug/vars", expvar.Handler())
 
@@ -124,11 +127,6 @@ type service struct {
 
 	mu      sync.RWMutex
 	results []serviceResult
-}
-
-type serviceResult struct {
-	*runner.Result
-	LastRun time.Time
 }
 
 func (s *service) Serve(ctx context.Context) error {
@@ -246,6 +244,23 @@ func (s *service) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"Success": ok,
 		"Results": s.results,
 	})
+}
+
+func (s *service) handleResults(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	b, err := json.Marshal(s.results)
+	if err != nil {
+		http.Error(w, "failed to marshal results", http.StatusInternalServerError)
+		return
+	}
+
+	if buildtags.IsDev {
+		(*jsontext.Value)(&b).Indent() // indent for readability
+	}
+	w.Write(b)
 }
 
 func (s *service) handleHealthz(w http.ResponseWriter, r *http.Request) {
