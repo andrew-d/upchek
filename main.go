@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"expvar"
 	"fmt"
 	"html/template"
 	"io"
@@ -86,6 +87,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", service.handleIndex)
 	mux.HandleFunc("GET /healthz", service.handleHealthz)
+	mux.Handle("/debug/vars", expvar.Handler())
 
 	// Add the listener service
 	server := suturehttp.New(ln, mux)
@@ -114,6 +116,12 @@ type service struct {
 	// templates
 	indexTemplate func() *template.Template
 
+	// metrics
+	metricOnce          sync.Once
+	metricScriptLatency *floatMap
+	metricScriptSuccess *boolMap // map[string]bool
+	metricLastRun       *expvar.Int
+
 	mu      sync.RWMutex
 	results []serviceResult
 }
@@ -127,6 +135,8 @@ func (s *service) Serve(ctx context.Context) error {
 	if s.logger == nil {
 		s.logger = slog.Default()
 	}
+	s.initMetrics()
+
 	s.logger.Info("runner started", slog.String("dir", s.dir))
 	defer s.logger.Info("runner stopped")
 
@@ -152,6 +162,15 @@ func (s *service) Serve(ctx context.Context) error {
 	return nil
 }
 
+func (s *service) initMetrics() {
+	const metricsPrefix = "upchek_"
+	s.metricOnce.Do(func() {
+		s.metricScriptLatency = newFloatMap(metricsPrefix + "script_latency")
+		s.metricScriptSuccess = newBoolMap(metricsPrefix + "script_last_status")
+		s.metricLastRun = expvar.NewInt(metricsPrefix + "last_run")
+	})
+}
+
 func (s *service) runScripts(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,21 +190,34 @@ func (s *service) runScripts(ctx context.Context) error {
 			continue
 		}
 
-		// Run it
-		t0 := time.Now()
-		result, err := runner.Run(ctx, fullPath)
-		s.logger.Debug("ran script", slog.String("name", entry.Name()), slog.Duration("duration", time.Since(t0)))
+		result, err := s.runScript(ctx, entry.Name(), fullPath)
 		if err != nil {
 			return fmt.Errorf("running script: %w", err)
 		}
-
-		// Save the result.
-		s.results = append(s.results, serviceResult{
-			Result:  result,
-			LastRun: t0,
-		})
+		s.results = append(s.results, result)
 	}
+
+	s.metricLastRun.Set(time.Now().Unix())
 	return nil
+}
+
+func (s *service) runScript(ctx context.Context, name, path string) (serviceResult, error) {
+	t0 := time.Now()
+	result, err := runner.Run(ctx, path)
+
+	// Track metrics before we return.
+	s.metricScriptLatency.Set(name, float64(time.Since(t0).Seconds()))
+	s.metricScriptSuccess.Set(name, result.IsSuccess())
+
+	s.logger.Debug("ran script", slog.String("name", name), slog.Duration("duration", time.Since(t0)))
+
+	if err != nil {
+		return serviceResult{}, err
+	}
+	return serviceResult{
+		Result:  result,
+		LastRun: t0,
+	}, nil
 }
 
 func isExecutable(path string) bool {
