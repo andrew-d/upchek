@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"html/template"
@@ -44,6 +45,12 @@ func defaultDir() string {
 	return "/etc/upchek"
 }
 
+// Templates
+var (
+	//go:embed index.html.tmpl
+	embeddedIndex []byte
+)
+
 func main() {
 	pflag.Parse()
 
@@ -70,13 +77,14 @@ func main() {
 
 	// Set up healthcheck service
 	service := &service{
-		dir:    *flagDir,
-		logger: logger.With(ulog.Component("runner")),
+		dir:           *flagDir,
+		logger:        logger.With(ulog.Component("runner")),
+		indexTemplate: registerTemplate(logger, "index.html.tmpl", embeddedIndex),
 	}
 	supervisor.Add(service)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", service.handleIndex)
+	mux.HandleFunc("GET /{$}", service.handleIndex)
 	mux.HandleFunc("GET /healthz", service.handleHealthz)
 
 	// Add the listener service
@@ -102,6 +110,9 @@ func main() {
 type service struct {
 	logger *slog.Logger
 	dir    string
+
+	// templates
+	indexTemplate func() *template.Template
 
 	mu      sync.RWMutex
 	results []serviceResult
@@ -185,62 +196,6 @@ func isExecutable(path string) bool {
 	return stat.Mode().Perm()&0111 != 0
 }
 
-var indexTemplate = template.Must(template.New("index").Parse(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>upchek</title>
-
-<!-- monospace everywhere! -->
-<style>
-body {
-  font-family: monospace;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-th, td {
-  border: 1px solid black;
-  padding: 8px;
-}
-</style>
-
-</head>
-
-<body>
-<h1>upchek {{if .Success}}<span style="color: green">&#x2713;</span>{{else}}<span style="color: red">&#x2717;</span>{{end}}
-</h1>
-
-<table>
-  <thead>
-    <tr>
-      <th>Script</th>
-      <th>Last Run</th>
-      <th>Exit Code</th>
-      <th>Output</th>
-      <th>Error</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Results}}
-  <tr>
-    <td>{{.Name}}</td>
-    <td>{{.LastRun.Format "2006-01-02 15:04:05"}}</td>
-    <td {{if .IsSuccess}}style="background-color: green"{{else}}style="background-color: red"{{end}}>
-      {{.ExitCode}}
-    </td>
-    <td><pre>{{.Stdout}}</pre></td>
-    <td><pre>{{.Stderr}}</pre></td>
-  </tr>
-  {{end}}
-</table>
-</body>
-</html>
-`))
-
 func (s *service) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -255,7 +210,7 @@ func (s *service) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	indexTemplate.Execute(w, map[string]any{
+	s.indexTemplate().Execute(w, map[string]any{
 		"Success": ok,
 		"Results": s.results,
 	})

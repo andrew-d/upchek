@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>upchek</title>
+
+<!-- monospace everywhere! -->
+<style>
+body {
+  font-family: monospace;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th, td {
+  border: 1px solid black;
+  padding: 8px;
+}
+</style>
+
+</head>
+
+<body>
+<h1>upchek
+  {{if .Success}}
+    <span style="color: green">&#x2713;</span>
+  {{else}}
+    <span style="color: red">&#x2717;</span>
+  {{end}}
+</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Script</th>
+      <th>Last Run</th>
+      <th>Exit Code</th>
+      <th>Output</th>
+      <th>Error</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Results}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td>{{.LastRun.Format "2006-01-02 15:04:05"}}</td>
+    <td {{if .IsSuccess}}style="background-color: green"{{else}}style="background-color: red"{{end}}>
+      {{.ExitCode}}
+    </td>
+    <td><pre>{{.Stdout}}</pre></td>
+    <td><pre>{{.Stderr}}</pre></td>
+  </tr>
+  {{end}}
+</table>
+</body>
+</html>
+
