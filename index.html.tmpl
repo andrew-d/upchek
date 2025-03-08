@@ -3,7 +3,6 @@
 <head>
 <title>upchek</title>
 
-<!-- monospace everywhere! -->
 <style>
 body {
   font-family: monospace;
@@ -18,19 +17,39 @@ th, td {
   border: 1px solid black;
   padding: 8px;
 }
-</style>
 
+td.code-col {
+  text-align: center;
+}
+td.code-col-ok {
+  background-color: green;
+}
+td.code-col-err {
+  background-color: red;
+}
+</style>
 </head>
 
-<body>
-<h1>upchek
-  {{if .Success}}
+{{/* define some helper templates */}}
+{{ define "checkmark" }}
+  {{if .}}
     <span style="color: green">&#x2713;</span>
   {{else}}
     <span style="color: red">&#x2717;</span>
   {{end}}
-</h1>
+{{end}}
 
+{{ define "time-td" }}
+  <td title="Unix timestamp: {{.Unix}}">
+    {{.Format "2006-01-02 15:04:05"}}
+  </td>
+{{end}}
+
+<body>
+
+<h1>upchek {{ template "checkmark" .GlobalOk }}</h1>
+
+<h2>local {{ template "checkmark" .LocalOk }}</h2>
 <table>
   <thead>
     <tr>
@@ -45,8 +64,8 @@ th, td {
   {{range .Results}}
   <tr>
     <td>{{.Name}}</td>
-    <td>{{.LastRun.Format "2006-01-02 15:04:05"}}</td>
-    <td {{if .IsSuccess}}style="background-color: green"{{else}}style="background-color: red"{{end}}>
+    {{ template "time-td" .LastRun }}
+    <td class="code-col {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
       {{.ExitCode}}
     </td>
     <td><pre>{{.Stdout}}</pre></td>
@@ -54,6 +73,50 @@ th, td {
   </tr>
   {{end}}
 </table>
+
+{{/*
+  collect top-level variables for remote results; we use the 'with' below to
+  ensure that we don't display the header or table unless we have remotes
+*/}}
+{{$remote_results := .RemoteResults}}
+{{$remote_errors := .RemoteErrors}}
+{{$remote_status := .RemoteStatus}}
+{{$remote_ok := .RemoteOk}}
+{{with .RemoteAddrs}}
+  <h2>Remote Results {{ template "checkmark" $remote_ok }}</h2>
+  {{range $host := .}}
+    {{$results := index $remote_results $host}}
+    <h3>{{ $host }} {{ template "checkmark" (index $remote_status $host) }}</h3>
+
+    {{with $rerr := index $remote_errors $host}}
+      <p style="border: 2px solid red">error: {{$rerr}}</p>
+    {{end}}
+    {{with $results}}
+      <table>
+        <thead>
+          <tr>
+            <th>Script</th>
+            <th>Last Run</th>
+            <th>Exit Code</th>
+            <th>Output</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{range .}}
+        <tr>
+          <td>{{.Name}}</td>
+          {{ template "time-td" .LastRun }}
+          <td class="code-col {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
+            {{.ExitCode}}
+          </td>
+          <td><pre>{{.Stdout}}</pre></td>
+          <td><pre>{{.Stderr}}</pre></td>
+        </tr>
+        {{end}}
+      </table>
+    {{end}}
+  {{end}}
+{{end}}
 </body>
 </html>
-

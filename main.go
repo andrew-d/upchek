@@ -26,6 +26,7 @@ import (
 	"github.com/thejerf/sutureslog"
 
 	"github.com/andrew-d/upchek/internal/buildtags"
+	"github.com/andrew-d/upchek/internal/lazy"
 	"github.com/andrew-d/upchek/internal/runner"
 	"github.com/andrew-d/upchek/internal/suturehttp"
 	"github.com/andrew-d/upchek/internal/ulog"
@@ -35,6 +36,7 @@ var (
 	flagVerbose = pflag.BoolP("verbose", "v", false, "verbose output")
 	flagListen  = pflag.StringP("listen", "l", ":8080", "address to listen on (e.g., :8080 or 127.0.0.1:8080)")
 	flagDir     = pflag.StringP("directory", "d", defaultDir(), "directory for healthcheck scripts")
+	flagRemote  = pflag.StringArray("remote", nil, "list of other upchek instances to aggregate results from")
 )
 
 func defaultDir() string {
@@ -83,8 +85,22 @@ func main() {
 		dir:           *flagDir,
 		logger:        logger.With(ulog.Component("runner")),
 		indexTemplate: registerTemplate(logger, "index.html.tmpl", embeddedIndex),
+		remoteAddrs:   *flagRemote,
 	}
 	supervisor.Add(service)
+
+	// If we have remote addresses to proxy from, set up a suture service
+	// for each of them.
+	//
+	// TODO: should this be in a separate supervisor with more specific
+	// timeouts?
+	for _, addr := range service.remoteAddrs {
+		supervisor.Add(&fetchRemoteResultService{
+			parent:   service,
+			addr:     addr,
+			interval: 30 * time.Second,
+		})
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", service.handleIndex)
@@ -120,13 +136,21 @@ type service struct {
 	indexTemplate func() *template.Template
 
 	// metrics
-	metricOnce          sync.Once
-	metricScriptLatency *floatMap
-	metricScriptSuccess *boolMap // map[string]bool
-	metricLastRun       *expvar.Int
+	metricOnce              sync.Once
+	metricScriptLatency     *floatMap
+	metricScriptSuccess     *boolMap // map[string]bool
+	metricLastRun           *expvar.Int
+	metricRemoteLatency     *floatMap
+	metricRemoteFetchStatus *boolMap // whether we can fetch from a remote
+	metricRemoteStatus      *boolMap // aggregate across all results of a remote
 
-	mu      sync.RWMutex
-	results []serviceResult
+	// remote instances
+	remoteAddrs []string
+
+	mu            sync.RWMutex // protects following
+	results       []serviceResult
+	remoteResults map[string][]serviceResult // map[addr][]serviceResult
+	remoteErrors  map[string]error           // map[addr]error
 }
 
 func (s *service) Serve(ctx context.Context) error {
@@ -166,6 +190,8 @@ func (s *service) initMetrics() {
 		s.metricScriptLatency = newFloatMap(metricsPrefix + "script_latency")
 		s.metricScriptSuccess = newBoolMap(metricsPrefix + "script_last_status")
 		s.metricLastRun = expvar.NewInt(metricsPrefix + "last_run")
+		s.metricRemoteLatency = newFloatMap(metricsPrefix + "remote_latency")
+		s.metricRemoteStatus = newBoolMap(metricsPrefix + "remote_status")
 	})
 }
 
@@ -218,6 +244,98 @@ func (s *service) runScript(ctx context.Context, name, path string) (serviceResu
 	}, nil
 }
 
+type fetchRemoteResultService struct {
+	parent   *service
+	addr     string
+	interval time.Duration
+}
+
+func (fr *fetchRemoteResultService) Serve(ctx context.Context) error {
+	fr.parent.initMetrics()
+
+	// Fetch once immediately.
+	if err := fr.fetch(ctx, fr.addr); err != nil {
+		return fmt.Errorf("initial fetch: %w", err)
+	}
+
+	ticker := time.NewTicker(fr.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		case <-ticker.C:
+			if err := fr.fetch(ctx, fr.addr); err != nil {
+				fr.parent.logger.Error("failed to fetch remote result", ulog.Error(err))
+			}
+		}
+	}
+}
+
+func (fr *fetchRemoteResultService) String() string {
+	return fmt.Sprintf("fetchRemoteResultService(%s)", fr.addr)
+}
+
+func (fr *fetchRemoteResultService) fetch(ctx context.Context, addr string) (retErr error) {
+	// Store errors from this fetch
+	s := fr.parent
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.remoteErrors == nil {
+			s.remoteErrors = make(map[string]error)
+		}
+		s.remoteErrors[addr] = retErr
+	}()
+
+	// Make a request to the remote instance's JSON endpoint.
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/results", addr), nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	t0 := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Unmarshal into a slice of serviceResult.
+	var results []serviceResult
+	if err := json.UnmarshalRead(resp.Body, &results); err != nil {
+		return fmt.Errorf("unmarshaling response: %w", err)
+	}
+
+	// Update metrics
+	s.metricRemoteLatency.Set(addr, float64(time.Since(t0).Seconds()))
+
+	ok := true
+	for _, result := range results {
+		if !result.IsSuccess() {
+			ok = false
+			break
+		}
+	}
+	s.metricRemoteStatus.Set(addr, ok)
+
+	s.logger.Debug("fetched remote results",
+		slog.String("addr", addr),
+		slog.Duration("duration", time.Since(t0)),
+		slog.Int("count", len(results)),
+	)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.remoteResults == nil {
+		s.remoteResults = make(map[string][]serviceResult)
+	}
+	s.remoteResults[addr] = results
+	return nil
+}
+
 func isExecutable(path string) bool {
 	stat, err := os.Stat(path)
 	if err != nil {
@@ -227,23 +345,94 @@ func isExecutable(path string) bool {
 }
 
 func (s *service) handleIndex(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Get global status
-	ok := true
-	for _, result := range s.results {
-		if !result.IsSuccess() {
-			ok = false
-			break
-		}
-	}
+	data := s.getTemplateData()
+	//s.logger.Debug("rendering index", slog.Any("data", data))
 
 	w.Header().Set("Content-Type", "text/html")
-	s.indexTemplate().Execute(w, map[string]any{
-		"Success": ok,
-		"Results": s.results,
+	err := s.indexTemplate().Execute(w, data)
+	if err != nil {
+		s.logger.Error("failed to render index", ulog.Error(err))
+	}
+}
+
+type indexData struct {
+	// Local results
+	Results []serviceResult
+
+	// Remote results
+	RemoteAddrs   []string
+	RemoteResults map[string][]serviceResult
+	RemoteErrors  map[string]error
+
+	// Map of remote addresses to status
+	lazyRemoteStatus lazy.Value[map[string]bool]
+
+	// Boolean status
+	lazyGlobalOk lazy.Value[bool] // all checks, local and remote
+	lazyLocalOk  lazy.Value[bool] // local checks only
+	lazyRemoteOk lazy.Value[bool] // remote checks only
+}
+
+func (d *indexData) GlobalOk() bool {
+	return d.lazyGlobalOk.Get(func() bool {
+		return d.LocalOk() && d.RemoteOk()
 	})
+}
+
+func (d *indexData) LocalOk() bool {
+	return d.lazyLocalOk.Get(func() bool {
+		for _, result := range d.Results {
+			if !result.IsSuccess() {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+func (d *indexData) RemoteOk() bool {
+	return d.lazyRemoteOk.Get(func() bool {
+		for _, ok := range d.RemoteStatus() {
+			if !ok {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// RemoteStatus returns a map with one key per remote address, and a boolean
+// value indicating whether all checks from that remote are successful and the
+// remote could be scraped successfully..
+func (d *indexData) RemoteStatus() map[string]bool {
+	return d.lazyRemoteStatus.Get(func() map[string]bool {
+		status := make(map[string]bool)
+		for _, addr := range d.RemoteAddrs {
+			status[addr] = true
+
+			for _, result := range d.RemoteResults[addr] {
+				if !result.IsSuccess() {
+					status[addr] = false
+					break
+				}
+			}
+			if err := d.RemoteErrors[addr]; err != nil {
+				status[addr] = false
+			}
+		}
+		return status
+	})
+}
+
+func (s *service) getTemplateData() (data *indexData) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return &indexData{
+		Results:       s.results,
+		RemoteAddrs:   s.remoteAddrs,
+		RemoteResults: s.remoteResults,
+		RemoteErrors:  s.remoteErrors,
+	}
 }
 
 func (s *service) handleResults(w http.ResponseWriter, r *http.Request) {

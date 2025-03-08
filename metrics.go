@@ -43,7 +43,8 @@ func newBoolMap(name string) *boolMap {
 }
 
 func (m *boolMap) Set(key string, value bool) {
-	// Represent a bool as an integer internally.
+	// Represent a bool as an integer internally. This matches the Prometheus
+	// convention for boolean values: 0 for false, 1 for true.
 	var i int64
 	if value {
 		i = 1
