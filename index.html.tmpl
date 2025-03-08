@@ -103,12 +103,12 @@ select {
     font-weight: bold;
   }
 
-  /* Add labels for each td - works for both local and remote tables */
-  tbody tr td:nth-of-type(1):before { content: "Script:"; }
-  tbody tr td:nth-of-type(2):before { content: "Last Run:"; }
-  tbody tr td:nth-of-type(3):before { content: "Exit Code:"; }
-  tbody tr td:nth-of-type(4):before { content: "Output:"; }
-  tbody tr td:nth-of-type(5):before { content: "Error:"; }
+  /* Add labels for each td - using specific classes */
+  td.script-cell:before { content: "Script:"; }
+  td.time-cell:before { content: "Last Run:"; }
+  td.exit-code-cell:before { content: "Exit Code:"; }
+  td.output-cell:before { content: "Output:"; }
+  td.error-cell:before { content: "Error:"; }
 
   td.code-col, td.code-col-ok, td.code-col-err {
     padding-left: 50%;
@@ -137,7 +137,7 @@ select {
 {{end}}
 
 {{ define "time-td" }}
-  <td title="Unix timestamp: {{.Unix}}">
+  <td class="time-cell" title="Unix timestamp: {{.Unix}}">
     {{.Format "2006-01-02 15:04:05"}}
   </td>
 {{end}}
@@ -171,13 +171,13 @@ select {
   <tbody>
   {{range .Results}}
   <tr class="result-row {{if .IsSuccess}}success-row{{else}}error-row{{end}}">
-    <td>{{.Name}}</td>
+    <td class="script-cell">{{.Name}}</td>
     {{ template "time-td" .LastRun }}
-    <td class="code-col {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
+    <td class="code-col exit-code-cell {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
       {{.ExitCode}}
     </td>
-    <td><pre>{{.Stdout}}</pre></td>
-    <td><pre>{{.Stderr}}</pre></td>
+    <td class="output-cell"><pre>{{.Stdout}}</pre></td>
+    <td class="error-cell"><pre>{{.Stderr}}</pre></td>
   </tr>
   {{end}}
 </table>
@@ -213,13 +213,13 @@ select {
         <tbody>
         {{range .}}
         <tr class="result-row {{if .IsSuccess}}success-row{{else}}error-row{{end}}">
-          <td>{{.Name}}</td>
+          <td class="script-cell">{{.Name}}</td>
           {{ template "time-td" .LastRun }}
-          <td class="code-col {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
+          <td class="code-col exit-code-cell {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
             {{.ExitCode}}
           </td>
-          <td><pre>{{.Stdout}}</pre></td>
-          <td><pre>{{.Stderr}}</pre></td>
+          <td class="output-cell"><pre>{{.Stdout}}</pre></td>
+          <td class="error-cell"><pre>{{.Stderr}}</pre></td>
         </tr>
         {{end}}
       </table>
