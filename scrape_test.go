@@ -43,6 +43,7 @@ func TestScrape(t *testing.T) {
 		parent:   s,
 		addr:     addr,
 		interval: 0,
+		logger:   s.logger,
 	}
 
 	// A single fetch should succeed.
@@ -74,6 +75,7 @@ func TestScrapeError(t *testing.T) {
 		parent:   s,
 		addr:     addr,
 		interval: 0,
+		logger:   s.logger,
 	}
 
 	// fetch should fail.

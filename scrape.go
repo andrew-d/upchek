@@ -14,6 +14,7 @@ import (
 
 type fetchRemoteResultService struct {
 	parent   *service
+	logger   *slog.Logger
 	addr     string
 	interval time.Duration
 }
@@ -35,7 +36,7 @@ func (fr *fetchRemoteResultService) Serve(ctx context.Context) error {
 
 		case <-ticker.C:
 			if err := fr.fetch(ctx, fr.addr); err != nil {
-				fr.parent.logger.Error("failed to fetch remote result", ulog.Error(err))
+				fr.logger.Error("failed to fetch remote result", ulog.Error(err))
 			}
 		}
 	}
@@ -95,8 +96,7 @@ func (fr *fetchRemoteResultService) fetch(ctx context.Context, addr string) (ret
 	}
 	s.metricRemoteStatus.Set(addr, ok)
 
-	s.logger.Debug("fetched remote results",
-		slog.String("addr", addr),
+	fr.logger.Debug("fetched remote results",
 		slog.Duration("duration", time.Since(t0)),
 		slog.Int("count", len(results)),
 	)
