@@ -1,11 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>upchek</title>
 
 <style>
 body {
   font-family: monospace;
+  margin: 0;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 table {
@@ -36,6 +40,89 @@ td.code-col-err {
 
 select {
   font-family: monospace;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .refresh-control {
+    position: static;
+    margin-bottom: 15px;
+    text-align: right;
+  }
+
+  table {
+    border: none;
+  }
+
+  table, thead, tbody, th, td, tr {
+    display: block;
+  }
+
+  thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+
+  tr {
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  /* Success/error card styling */
+  tr.success-row {
+    border-left: 5px solid green;
+    background-color: rgba(0, 128, 0, 0.05);
+  }
+
+  tr.error-row {
+    border-left: 5px solid red;
+    background-color: rgba(255, 0, 0, 0.05);
+  }
+
+  td {
+    border: none;
+    border-bottom: 1px solid #eee;
+    position: relative;
+    padding-left: 50%;
+    text-align: left;
+  }
+
+  td:last-child {
+    border-bottom: none;
+  }
+
+  td:before {
+    position: absolute;
+    left: 8px;
+    width: 45%;
+    white-space: nowrap;
+    font-weight: bold;
+  }
+
+  /* Add labels for each td - works for both local and remote tables */
+  tbody tr td:nth-of-type(1):before { content: "Script:"; }
+  tbody tr td:nth-of-type(2):before { content: "Last Run:"; }
+  tbody tr td:nth-of-type(3):before { content: "Exit Code:"; }
+  tbody tr td:nth-of-type(4):before { content: "Output:"; }
+  tbody tr td:nth-of-type(5):before { content: "Error:"; }
+
+  td.code-col, td.code-col-ok, td.code-col-err {
+    padding-left: 50%;
+    text-align: left;
+    background-color: transparent !important; /* Remove background on mobile */
+  }
+
+  /* Make pre tags responsive */
+  td pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
 </style>
 </head>
@@ -83,7 +170,7 @@ select {
   </thead>
   <tbody>
   {{range .Results}}
-  <tr>
+  <tr class="result-row {{if .IsSuccess}}success-row{{else}}error-row{{end}}">
     <td>{{.Name}}</td>
     {{ template "time-td" .LastRun }}
     <td class="code-col {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
@@ -125,7 +212,7 @@ select {
         </thead>
         <tbody>
         {{range .}}
-        <tr>
+        <tr class="result-row {{if .IsSuccess}}success-row{{else}}error-row{{end}}">
           <td>{{.Name}}</td>
           {{ template "time-td" .LastRun }}
           <td class="code-col {{if .IsSuccess}}code-col-ok{{else}}code-col-err{{end}}">
