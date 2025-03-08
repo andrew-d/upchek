@@ -8,3 +8,8 @@ automatically run and displayed.
 
 It also exposes a `/healthz` endpoint that can be used to check the overall
 system health.
+
+## Screenshots
+
+![full size](docs/upchek-desktop.png)
+![mobile](docs/upchek-mobile.png)
