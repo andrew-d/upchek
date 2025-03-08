@@ -113,7 +113,8 @@ func main() {
 	server.Logger = logger.With(ulog.Component("http"))
 	supervisor.Add(server)
 
-	// Publish metrics from our service
+	// Publish metrics from our service to expvar; only call once at the
+	// top level to avoid duplicate metric panics.
 	service.PublishMetrics()
 
 	// Now that we've set up our supervision tree, we can start it.
@@ -193,6 +194,7 @@ func (s *service) initMetrics() {
 		s.metricScriptSuccess = newBoolMap()
 		s.metricLastRun = new(expvar.Int)
 		s.metricRemoteLatency = newFloatMap()
+		s.metricRemoteFetchStatus = newBoolMap()
 		s.metricRemoteStatus = newBoolMap()
 	})
 }
@@ -205,6 +207,7 @@ func (s *service) PublishMetrics() {
 	expvar.Publish(metricsPrefix+"script_last_status", s.metricScriptSuccess)
 	expvar.Publish(metricsPrefix+"last_run", s.metricLastRun)
 	expvar.Publish(metricsPrefix+"remote_latency", s.metricRemoteLatency)
+	expvar.Publish(metricsPrefix+"remote_fetch_status", s.metricRemoteFetchStatus)
 	expvar.Publish(metricsPrefix+"remote_status", s.metricRemoteStatus)
 }
 

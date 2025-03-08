@@ -56,7 +56,9 @@ func TestScrape(t *testing.T) {
 func TestScrapeError(t *testing.T) {
 	// Launch a http server that serves a JSON response.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.MarshalWrite(w, []serviceResult{})
 	}))
 	defer srv.Close()
 
@@ -74,9 +76,17 @@ func TestScrapeError(t *testing.T) {
 		interval: 0,
 	}
 
-	// A single fetch should succeed.
+	// fetch should fail.
 	ctx := context.Background()
 	if err := fr.fetch(ctx, addr); err == nil {
 		t.Fatalf("expected error")
+	} else {
+		t.Logf("got expected error: %v", err)
+	}
+
+	// Expect an error in the fetch status metric map.
+	got := s.metricRemoteFetchStatus.Get(addr)
+	if want := "0"; got.String() != want {
+		t.Fatalf("expected fetch status for %q to be %q, got %q", addr, want, got)
 	}
 }

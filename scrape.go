@@ -55,6 +55,7 @@ func (fr *fetchRemoteResultService) fetch(ctx context.Context, addr string) (ret
 			s.remoteErrors = make(map[string]error)
 		}
 		s.remoteErrors[addr] = retErr
+		s.metricRemoteFetchStatus.Set(addr, retErr == nil)
 	}()
 
 	// Make a request to the remote instance's JSON endpoint.
@@ -70,6 +71,11 @@ func (fr *fetchRemoteResultService) fetch(ctx context.Context, addr string) (ret
 		return fmt.Errorf("making request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// Expect a 200 OK response.
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
 	// Unmarshal into a slice of serviceResult.
 	var results []serviceResult
