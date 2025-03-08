@@ -8,7 +8,7 @@ import (
 func TestFloatMap_Set(t *testing.T) {
 	// NOTE: construct manually instead of with newFloatMap since we can
 	// only register a given expvar.Map once.
-	m := &floatMap{&expvar.Map{}}
+	m := newFloatMap()
 
 	m.Set("key", 1.0)
 	if v := m.Get("key"); v == nil {
@@ -19,7 +19,7 @@ func TestFloatMap_Set(t *testing.T) {
 }
 
 func TestFloatMap_Add(t *testing.T) {
-	m := &floatMap{&expvar.Map{}}
+	m := newFloatMap()
 
 	m.Add("key", 1.0)
 	if v := m.Get("key"); v == nil {
@@ -37,7 +37,7 @@ func TestFloatMap_Add(t *testing.T) {
 }
 
 func TestBoolMap(t *testing.T) {
-	m := &boolMap{&expvar.Map{}}
+	m := newBoolMap()
 
 	m.Set("key", true)
 	if v := m.Get("key"); v == nil {

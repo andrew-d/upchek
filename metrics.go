@@ -6,8 +6,8 @@ type floatMap struct {
 	*expvar.Map
 }
 
-func newFloatMap(name string) *floatMap {
-	return &floatMap{expvar.NewMap(name)}
+func newFloatMap() *floatMap {
+	return &floatMap{&expvar.Map{}}
 }
 
 func (m *floatMap) Set(key string, value float64) {
@@ -38,8 +38,8 @@ type boolMap struct {
 	*expvar.Map
 }
 
-func newBoolMap(name string) *boolMap {
-	return &boolMap{expvar.NewMap(name)}
+func newBoolMap() *boolMap {
+	return &boolMap{&expvar.Map{}}
 }
 
 func (m *boolMap) Set(key string, value bool) {
