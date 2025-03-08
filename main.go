@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -34,20 +35,44 @@ import (
 
 var (
 	flagVerbose = pflag.BoolP("verbose", "v", false, "verbose output")
-	flagListen  = pflag.StringP("listen", "l", ":8080", "address to listen on (e.g., :8080 or 127.0.0.1:8080)")
+	flagListen  = pflag.StringP("listen", "l", ":8080", "address to listen on")
 	flagDir     = pflag.StringP("directory", "d", defaultDir(), "directory for healthcheck scripts")
 	flagRemote  = pflag.StringArray("remote", nil, "list of other upchek instances to aggregate results from")
 )
 
 func defaultDir() string {
 	if buildtags.IsDev {
-		// Run from the project root in dev mode.
+		// Run from the project root in dev mode, if it exists.
 		currentDir, err := os.Getwd()
 		if err == nil {
-			return filepath.Join(currentDir, "scripts")
+			repoDir := filepath.Join(currentDir, "scripts")
+			if st, err := os.Stat(repoDir); err == nil && st.IsDir() {
+				return repoDir
+			}
 		}
 	}
-	return "/etc/upchek"
+
+	// If we're running as UID 0, use the system-wide directory; otherwise,
+	// use the user's home directory.
+	isRoot := os.Geteuid() == 0
+
+	// Get the user's home directory.
+	homedir, _ := os.UserHomeDir()
+	if homedir == "" {
+		homedir = "/unknown-home"
+	}
+
+	switch {
+	case isRoot:
+		return "/etc/upchek"
+	case runtime.GOOS == "darwin":
+		return filepath.Join(homedir, "Library", "Application Support", "upchek", "scripts")
+	case runtime.GOOS == "linux":
+		return filepath.Join(homedir, ".config", "upchek", "scripts")
+	}
+
+	// Default to a hidden directory in the user's home directory on other platforms.
+	return filepath.Join(homedir, ".upchek", "scripts")
 }
 
 // Templates
@@ -99,6 +124,7 @@ func main() {
 			parent:   service,
 			addr:     addr,
 			interval: 30 * time.Second,
+			logger:   logger.With(ulog.Component("remote"), slog.String("addr", addr)),
 		})
 	}
 
