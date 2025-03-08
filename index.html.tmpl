@@ -27,6 +27,16 @@ td.code-col-ok {
 td.code-col-err {
   background-color: red;
 }
+
+.refresh-control {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+select {
+  font-family: monospace;
+}
 </style>
 </head>
 
@@ -46,6 +56,17 @@ td.code-col-err {
 {{end}}
 
 <body>
+
+<div class="refresh-control">
+  <label for="refrech-interval">Auto-refresh: </label>
+  <select id="refresh-interval" onchange="setRefreshInterval()">
+    <option value="0">Off</option>
+    <option value="5">5s</option>
+    <option value="10">10s</option>
+    <option value="30">30s</option>
+    <option value="60">60s</option>
+  </select>
+</div>
 
 <h1>upchek {{ template "checkmark" .GlobalOk }}</h1>
 
@@ -118,5 +139,40 @@ td.code-col-err {
     {{end}}
   {{end}}
 {{end}}
+
+<script>
+let refreshTimer;
+
+function setRefreshInterval() {
+  // Clear any existing timer
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+
+  // Get the selected refresh interval value
+  const intervalValue = document.getElementById('refresh-interval').value;
+  const seconds = parseInt(intervalValue, 10);
+
+  // Set up new timer if interval is greater than 0
+  if (seconds > 0) {
+    refreshTimer = setInterval(() => {
+      window.location.reload();
+    }, seconds * 1000);
+  }
+
+  // Store the user's preference in localStorage
+  localStorage.setItem('upchek-refresh-interval', intervalValue);
+}
+
+// Initialize the dropdown based on saved preference
+document.addEventListener('DOMContentLoaded', () => {
+  const savedInterval = localStorage.getItem('upchek-refresh-interval');
+  if (savedInterval) {
+    document.getElementById('refresh-interval').value = savedInterval;
+    setRefreshInterval();
+  }
+});
+</script>
 </body>
 </html>
